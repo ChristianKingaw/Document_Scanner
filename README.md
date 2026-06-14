@@ -80,7 +80,7 @@ The Vite dev server proxies `/api` requests to the API server.
 
 ## OCR Enhancements
 
-- **PSM.AUTO_OSD** page segmentation — handles mixed layouts and isolated symbols.
+- **PSM.SPARSE_TEXT** page segmentation — designed for bullet-heavy documents with isolated text blocks.
 - **`preserve_interword_spaces`** — retains spacing around bullets, dashes, and special characters.
 - **Histogram clipping** — prevents thin glyphs like `•`, `–`, `—` from washing out during normalization.
 - **Unicode NFC normalization** — collapses decomposed codepoints into proper single characters (e.g., é, ü).
