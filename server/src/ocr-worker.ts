@@ -1,6 +1,7 @@
 import { createWorker, PSM } from 'tesseract.js';
 import sharp from 'sharp';
 import path from 'path';
+import fs from 'fs';
 import db from './db.js';
 
 const BULLET_GLYPHS = /^([eoc©®™\*\.\_\-\+~>])\s+(?=\S)/;
@@ -102,6 +103,37 @@ function cleanText(text: string): string {
     .replace(/\n{3,}/g, '\n\n');
 }
 
+async function runOcr(imagePath: string, psm: PSM, invert = false): Promise<{ text: string; confidence: number }> {
+  const tempPath = imagePath + (invert ? '.inv.png' : '.std.png');
+  
+  let pipeline = sharp(imagePath);
+  if (invert) pipeline = pipeline.negate();
+  
+  await pipeline
+    .grayscale()
+    .linear(1.5, -0.2) // Aggressive contrast boost
+    .threshold(160) // Force binary black and white
+    .png()
+    .toFile(tempPath);
+
+  const worker = await createWorker('eng');
+  await worker.setParameters({
+    tessedit_pageseg_mode: psm,
+    preserve_interword_spaces: '1',
+  });
+
+  const { data } = await worker.recognize(tempPath);
+  await worker.terminate();
+  
+  // Cleanup temp file
+  try { fs.unlinkSync(tempPath); } catch {}
+
+  return {
+    text: data.text.normalize('NFC'),
+    confidence: data.confidence,
+  };
+}
+
 export async function processDocument(
   documentId: string,
   imagePath: string
@@ -113,19 +145,16 @@ export async function processDocument(
     documentId
   );
 
-  const preprocessedPath = path.join(
+  const basePreprocessedPath = path.join(
     import.meta.dirname,
     '..',
     'uploads',
     `preprocessed_${documentId}.png`
   );
 
-  // Clean, high-res preprocessing to preserve stylized logo fonts
+  // Initial high-res resize for the base image
   await sharp(imagePath)
-    .resize({ width: 2500 })
-    .grayscale()
-    .normalize()
-    .sharpen()
+    .resize({ width: 3000 }) // Even higher res for small logo text
     .extend({
       top: 40,
       bottom: 40,
@@ -134,24 +163,30 @@ export async function processDocument(
       background: { r: 255, g: 255, b: 255, alpha: 1 },
     })
     .png()
-    .toFile(preprocessedPath);
+    .toFile(basePreprocessedPath);
 
-  const worker = await createWorker('eng');
+  // Pass 1: Standard AUTO
+  let result = await runOcr(basePreprocessedPath, PSM.AUTO);
+  
+  // Pass 2: Fallback to Inverted if Pass 1 is empty or low confidence
+  // Logos are frequently white text on dark background
+  if (result.text.trim().length < 5 || result.confidence < 60) {
+    const invResult = await runOcr(basePreprocessedPath, PSM.AUTO, true);
+    if (invResult.text.trim().length > result.text.trim().length || invResult.confidence > result.confidence) {
+      result = invResult;
+    }
+  }
 
-  await worker.setParameters({
-    tessedit_pageseg_mode: PSM.AUTO, // Balanced for both docs and logos
-    preserve_interword_spaces: '1',
-    textord_tabfind_find_tables: '0',
-    classify_bln_numeric_mode: '0',
-    tessedit_char_blacklist: '|=_~[]{}()', // Block common background noise symbols
-  });
+  // Final Cleanup Pass 3: SPARSE_TEXT if still nothing
+  if (result.text.trim().length < 3) {
+    const sparseResult = await runOcr(basePreprocessedPath, PSM.SPARSE_TEXT);
+    if (sparseResult.text.trim().length > result.text.trim().length) {
+      result = sparseResult;
+    }
+  }
 
-  const { data } = await worker.recognize(preprocessedPath);
-  await worker.terminate();
-
-  const raw = data.text.normalize('NFC');
-  const text = cleanText(fixBullets(raw));
-  const confidence = Math.round(data.confidence);
+  const text = cleanText(fixBullets(result.text));
+  const confidence = Math.round(result.confidence);
 
   db.prepare(
     `UPDATE documents SET status = ?, ocr_text = ?, ocr_confidence = ?, completed_at = datetime('now') WHERE id = ?`
@@ -160,4 +195,7 @@ export async function processDocument(
   console.log(
     `[OCR] Completed document ${documentId} (confidence: ${confidence}%)`
   );
+  
+  // Cleanup base preprocessed file
+  try { fs.unlinkSync(basePreprocessedPath); } catch {}
 }
