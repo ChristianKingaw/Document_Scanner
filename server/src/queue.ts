@@ -6,7 +6,8 @@ type Job = {
 };
 
 const jobQueue: Job[] = [];
-let isProcessing = false;
+const MAX_CONCURRENT_JOBS = 2;
+let activeJobs = 0;
 
 export function enqueue(documentId: string, imagePath: string): void {
   jobQueue.push({ documentId, imagePath });
@@ -14,16 +15,20 @@ export function enqueue(documentId: string, imagePath: string): void {
 }
 
 async function processNext(): Promise<void> {
-  if (isProcessing || jobQueue.length === 0) return;
-  isProcessing = true;
-
+  if (activeJobs >= MAX_CONCURRENT_JOBS || jobQueue.length === 0) return;
+  
+  activeJobs++;
   const job = jobQueue.shift()!;
+  
+  // Start next job immediately if there's capacity
+  processNext();
+
   try {
     await processDocument(job.documentId, job.imagePath);
   } catch (err) {
     console.error(`Job failed for ${job.documentId}:`, err);
   } finally {
-    isProcessing = false;
+    activeJobs--;
     processNext();
   }
 }

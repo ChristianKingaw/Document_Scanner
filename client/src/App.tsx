@@ -49,12 +49,32 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
 
-  const processUpload = async (file: File) => {
+  const processUploads = async (files: FileList | File[]) => {
+    const fileList = Array.from(files);
+    if (fileList.length === 0) return;
+
     setError(null);
     setUploading(true);
+
     try {
-      const doc = await uploadDocument(file);
-      setSelectedId(doc.id);
+      // Parallel upload
+      const results = await Promise.allSettled(
+        fileList.map((file) => uploadDocument(file))
+      );
+
+      const failures = results.filter((r) => r.status === 'rejected');
+      if (failures.length > 0) {
+        setError(`Failed to upload ${failures.length} file(s)`);
+      }
+
+      // Select the first successful one
+      const firstSuccess = results.find(
+        (r): r is PromiseFulfilledResult<Document> => r.status === 'fulfilled'
+      );
+      if (firstSuccess) {
+        setSelectedId(firstSuccess.value.id);
+      }
+
       await loadDocs();
     } catch {
       setError('Upload failed');
@@ -65,8 +85,7 @@ export default function App() {
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) await processUpload(file);
+    if (e.target.files) await processUploads(e.target.files);
   };
 
   const handleDragEnter = (e: React.DragEvent) => {
@@ -98,8 +117,7 @@ export default function App() {
     setIsDragging(false);
     dragCounter.current = 0;
 
-    const file = e.dataTransfer.files?.[0];
-    if (file) await processUpload(file);
+    if (e.dataTransfer.files) await processUploads(e.dataTransfer.files);
   };
 
   const handleDelete = async (id: string) => {
@@ -140,6 +158,7 @@ export default function App() {
               onChange={handleUpload}
               style={{ display: 'none' }}
               disabled={uploading}
+              multiple
             />
           </label>
         </div>
