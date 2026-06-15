@@ -85,6 +85,23 @@ function fixBullets(text: string): string {
   return lines.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
+function cleanText(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (line.length === 0) return false;
+      // Filter out single noise characters like ., -, ', etc.
+      if (line.length === 1 && !/[a-zA-Z0-9]/.test(line)) return false;
+      // Filter out lines that are mostly just non-alphanumeric noise
+      const alphaCount = (line.match(/[a-zA-Z0-9]/g) || []).length;
+      if (alphaCount / line.length < 0.3 && line.length > 2) return false;
+      return true;
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 export async function processDocument(
   documentId: string,
   imagePath: string
@@ -103,12 +120,11 @@ export async function processDocument(
     `preprocessed_${documentId}.png`
   );
 
-  // Multi-stage preprocessing for noise reduction and contrast
+  // Clean, high-res preprocessing to preserve stylized logo fonts
   await sharp(imagePath)
     .resize({ width: 2500 })
     .grayscale()
-    .median(1) // Remove single-pixel noise
-    .linear(1.2, -0.1) // Boost contrast
+    .normalize()
     .sharpen()
     .extend({
       top: 40,
@@ -123,18 +139,18 @@ export async function processDocument(
   const worker = await createWorker('eng');
 
   await worker.setParameters({
-    tessedit_pageseg_mode: PSM.AUTO, // Better layout grouping than SPARSE_TEXT
+    tessedit_pageseg_mode: PSM.AUTO, // Balanced for both docs and logos
     preserve_interword_spaces: '1',
     textord_tabfind_find_tables: '0',
     classify_bln_numeric_mode: '0',
-    tessedit_char_blacklist: '|=_~', // Filter out common noise characters
+    tessedit_char_blacklist: '|=_~[]{}()', // Block common background noise symbols
   });
 
   const { data } = await worker.recognize(preprocessedPath);
   await worker.terminate();
 
   const raw = data.text.normalize('NFC');
-  const text = fixBullets(raw);
+  const text = cleanText(fixBullets(raw));
   const confidence = Math.round(data.confidence);
 
   db.prepare(
