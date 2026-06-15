@@ -46,9 +46,10 @@ export default function App() {
 
   const selected = docs.find((d) => d.id === selectedId) ?? null;
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = useRef(0);
+
+  const processUpload = async (file: File) => {
     setError(null);
     setUploading(true);
     try {
@@ -63,6 +64,44 @@ export default function App() {
     }
   };
 
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) await processUpload(file);
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounter.current = 0;
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) await processUpload(file);
+  };
+
   const handleDelete = async (id: string) => {
     try {
       await deleteDocument(id);
@@ -74,7 +113,21 @@ export default function App() {
   };
 
   return (
-    <div style={styles.wrapper}>
+    <div
+      style={styles.wrapper}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {isDragging && (
+        <div style={styles.dragOverlay}>
+          <div style={styles.dragOverlayBox}>
+            <span style={styles.dragOverlayIcon}>📁</span>
+            <span style={styles.dragOverlayText}>Drop to upload document</span>
+          </div>
+        </div>
+      )}
       <div style={styles.sidebar}>
         <div style={styles.sidebarHeader}>
           <h1 style={styles.title}>Document Scanner</h1>
@@ -180,6 +233,38 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     background: '#1a1a19',
     color: '#e8e7e2',
+    position: 'relative',
+  },
+  dragOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(59, 130, 246, 0.15)',
+    backdropFilter: 'blur(4px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    pointerEvents: 'none',
+    border: '2px dashed #3b82f6',
+    margin: 12,
+    borderRadius: 12,
+  },
+  dragOverlayBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 12,
+  },
+  dragOverlayIcon: {
+    fontSize: 48,
+  },
+  dragOverlayText: {
+    fontSize: 18,
+    fontWeight: 500,
+    color: '#3b82f6',
   },
   sidebar: {
     width: 320,
