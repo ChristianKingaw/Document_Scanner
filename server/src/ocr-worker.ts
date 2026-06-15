@@ -99,13 +99,20 @@ export async function processDocument(
     .normalize({ lower: 3, upper: 97 })
     .sharpen({ sigma: 1.2, m1: 1.0, m2: 1.5 })
     .resize({ width: 2500, withoutEnlargement: true })
+    .extend({
+      top: 40,
+      bottom: 40,
+      left: 40,
+      right: 40,
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    })
     .png()
     .toFile(preprocessedPath);
 
   const worker = await createWorker('eng');
 
   await worker.setParameters({
-    tessedit_pageseg_mode: PSM.SPARSE_TEXT,
+    tessedit_pageseg_mode: PSM.AUTO,
     preserve_interword_spaces: '1',
     textord_tabfind_find_tables: '0',
     classify_bln_numeric_mode: '0',
