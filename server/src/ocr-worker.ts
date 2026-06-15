@@ -98,7 +98,7 @@ export async function processDocument(
     .grayscale()
     .normalize({ lower: 3, upper: 97 })
     .sharpen({ sigma: 1.2, m1: 1.0, m2: 1.5 })
-    .resize({ width: 2500, withoutEnlargement: true })
+    .resize({ width: 2500 }) // Ensure sufficient resolution for small logos/cards
     .extend({
       top: 40,
       bottom: 40,
@@ -112,7 +112,7 @@ export async function processDocument(
   const worker = await createWorker('eng');
 
   await worker.setParameters({
-    tessedit_pageseg_mode: PSM.AUTO,
+    tessedit_pageseg_mode: PSM.SPARSE_TEXT, // Find all possible text, regardless of layout
     preserve_interword_spaces: '1',
     textord_tabfind_find_tables: '0',
     classify_bln_numeric_mode: '0',
